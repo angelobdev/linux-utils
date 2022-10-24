@@ -1,4 +1,4 @@
-#! /bin/bash
+#!/bin/bash
 
 #COLORS
 # Bold
@@ -13,22 +13,18 @@ BWhite='\033[1;37m'       # White
 # Reset
 Color_Off='\033[0m'       # Text Reset
 
-#SCRIPT
-printf "${BRed}We highly suggest to run this script in super user mode\n"
-
-#Asking Super User
-read -p "Do you want to switch? (Y/n)" -n 1 -r
-if [[ $REPLY =~ ^[Yy]$ ]]
+#Sudo Check
+if [ $EUID -ne "0" ]
 then
-	sudo su -
+    printf "${BRed}This script must be run in sudo mode.\n${Color_Off}"
+    printf "${BRed}Try: sudo sh ${0}\n${Color_Off}"
+    exit;
 fi
-
-printf "${Color_Off}\n"
 
 #Updating packages
 printf "${BPurple}Updating packages...${Color_Off}\n"
 sudo apt update -y
-printf "${BGreen}Done!\n"
+printf "${BGreen}Done!\n${Color_Off}"
 
 #Installing SED to edit files
 sudo apt install sed -y
@@ -36,27 +32,33 @@ sudo apt install sed -y
 #Installing Apache2
 printf "${BPurple}Installing Apache 2...\n"
 sudo apt install apache2 -y
-printf "${BGreen}Done!\n"
+printf "${BGreen}Done!\n${Color_Off}"
 
 #Installing MySQL server
 printf "${BPurple}Installing MySQL server...${Color_Off}\n"
 sudo apt install mysql-server -y
 
-printf "${BYellow}Configuring wordpress access..."
+printf "${BYellow}Configuring wordpress access...\n${Color_Off}"
 read -p "Enter MySQL password:" -s mysql_psw
-read -p "Confirm password" -s mysql_psw_conf
+echo
+read -p "Confirm password:" -s mysql_psw_conf
+echo
 
-while [[$mysql_psw != $mysql_psw_conf]]
+while [[ "$mysql_psw" != "$mysql_psw_conf" ]]
 do
 	printf "${BRred}Passwords are not the same!\n${Color_Off}"
-	read -p "Enter MySQL password:" -s mysql_psw
-	read -p "Confirm password" -s mysql_psw_conf 
+    	read -p "Enter MySQL password:" -s mysql_psw
+    	echo
+    	read -p "Confirm password:" -s mysql_psw_conf
+    	echo
 done
 
+#TODO CHECK
 mysql -uroot << MYSQL_END
-	CREATE USER 'wordpress'@'localhost' IDENTIFIED BY '${mysql_psw}';
-	GRANT ALL PRIVILEGES ON *.* TO 'wordpress'@'localhost' WITH GRANT OPTION;
-	FLUSH PRIVILEGES;
+DROP USER wordpress@localhost;
+CREATE USER 'wordpress'@'localhost' IDENTIFIED BY '${mysql_psw}';
+GRANT ALL PRIVILEGES ON *.* TO 'wordpress'@'localhost' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
 MYSQL_END
 
 #Installing PHP@7.4
@@ -83,30 +85,18 @@ sudo service apache2 restart
 #Configuring VirtualHost
 mv /etc/apache2/sites-available/000-default.conf /etc/apache2/sites-available/default.conf.copy
 
-printf "<VirtualHost *:80>\n" \
-        	"\tServerAdmin webmaster@localhost\n" \
-        	"\tDocumentRoot /var/www/html\n" \
-        	"\t<Directory /var/www/html>\n" \
-            		"\t\tOptions Indexes FollowSymLinks MultiViews\n" \
-            		"\t\tAllowOverride all\n" \
-            		"\t\tRequire all granted\n" \
-        	"\t</Directory>\n" \
-        	"\tErrorLog ${APACHE_LOG_DIR}/error.log\n" \
-        	"\tCustomLog ${APACHE_LOG_DIR}/access.log combined\n" \
-	"</VirtualHost>" >> /etc/apache2/sites-available/000-default.conf
+printf "<VirtualHost *:80>\n\tServerAdmin webmaster@localhost\n\tDocumentRoot /var/www/html\n\t<Directory /var/www/html>\n\t\tOptions Indexes FollowSymLinks MultiViews\n\t\tAllowOverride all\n\t\tRequire all granted\n\t</Directory>\n\tErrorLog \${APACHE_LOG_DIR}/error.log\n\tCustomLog \${APACHE_LOG_DIR}/access.log combined\n</VirtualHost>" >> /etc/apache2/sites-available/000-default.conf
 
 sudo service apache2 restart
 
 #Installing Wordpress
-printf "${BPurple}Installing Wordpress...\n"
+printf "${BPurple}Installing Wordpress...\n${Color_Off}"
 
-mysql -uroot << MYSQL_WP_END
-	CREATE DATABASE wordpress DEFAULT CHARACTER SET utf8 COLLATE utf8_unicode_ci;
-MYSQL_WP_END
+mysql -uroot -e "CREATE DATABASE wordpress DEFAULT CHARACTER SET utf8 COLLATE utf8_unicode_ci;"
 
 cd /tmp
 curl -O https://wordpress.org/latest.tar.gz
-tar xzvf latest.tar.gz
+tar xzf latest.tar.gz
 
 touch /tmp/wordpress/.htaccess
 mkdir /tmp/wordpress/wp-content/upgrade
@@ -114,42 +104,36 @@ mkdir /tmp/wordpress/wp-content/upgrade
 rm /var/www/html/index.html
 sudo cp -a /tmp/wordpress/. /var/www/html
 
-sudo find /var/www/html/ -type d -exec chmod 750 {} \;
-sudo find /var/www/html/ -type f -exec chmod 640 {} \;
+sudo chmod 755 /var/www/html/
+sudo find /var/www/html/ -type d -exec chmod 750 {}
+sudo find /var/www/html/ -type f -exec chmod 640 {} 
 
 sudo rm /var/www/html/wp-config.php
 
 #wp-config.php
-printf  "<?php\n" \
-	"define( 'DB_NAME', 'wordpress' );\n" \
-	"define( 'DB_USER', 'wordpress' );\n" \
-	"define( 'DB_PASSWORD', '${mysql_psw}' );\n" \
-	"define( 'DB_HOST', 'localhost' );\n" \
-	"define( 'DB_CHARSET', 'utf8' );\n" \
-	"define( 'DB_COLLATE', '' );\n" \
+printf  "<?php\ndefine( 'DB_NAME', 'wordpress' );\ndefine( 'DB_USER', 'wordpress' );\ndefine( 'DB_PASSWORD', '${mysql_psw}' );\ndefine( 'DB_HOST', 'localhost' );\ndefine( 'DB_CHARSET', 'utf8' );\ndefine( 'DB_COLLATE', '' );\n\n" >> /var/www/html/wp-config.php
 
-curl -s https://api.wordpress.org/secret-key/1.1/salt/ >> /tmp/wp_secret_keys.txt
+curl -s https://api.wordpress.org/secret-key/1.1/salt/ >> /var/www/html/wp-config.php
 
-prefix=$(head -100 /dev/urandom | tr -dc a-zA-Z0-9 | fold -w 6 | head -1)
-printf  "$table_prefix = '${prefix}_';\n" \
-	"define( 'WP_DEBUG', false );\n" \
-	"if ( ! defined( 'ABSPATH' ) ) {\n" \
-		"\tdefine( 'ABSPATH', __DIR__ . '/' );\n" \
-	"}\n"\
-	"require_once ABSPATH . 'wp-settings.php';\n" \
-"?>" >> /var/www/html/wp-config.php
+prefix=$(head -100 /dev/urandom | tr -dc a-zA-Z0-9 | fold -w 6 | head -1) #Random prefix to be safer
 
-printf "${BGreen}Done!\n" 
+printf  "\n\$table_prefix = '${prefix}_';\n\ndefine( 'WP_DEBUG', false );\nif ( ! defined( 'ABSPATH' ) ) {\n\tdefine( 'ABSPATH', __DIR__ . '/' );\n}\nrequire_once ABSPATH . 'wp-settings.php';\n?>" >> /var/www/html/wp-config.php
 
-#Asking phpMyAdmin
-read -p "Do you want to install phpMyAdmin?" -n 1 -r
+printf "${BGreen}Done!\n${Color_Off}" 
+
+#\Asking phpMyAdmin
+read -p "Do you want to install phpMyAdmin? (Y/n) " -n 1 -r
 if [[ $REPLY =~ ^[Yy]$ ]]
 then
-        sudo apt update
+    echo
+    sudo apt update
 	sudo apt install phpmyadmin -y
 	ln -s /usr/share/phpmyadmin /var/www/html/phpmyadmin
-	printf "Location: http://localhost/phpmyadmin"
-	printf "${BGreen}Done!"
+	printf "\n\nLocation: http://localhost/phpmyadmin \n"
+	printf "${BGreen}Done!\n${Color_Off}"
 fi
 
-printf "${BPurple}Congrats! You have successfully installed Wordpress!"
+printf "${BPurple}Congrats! You have successfully installed Wordpress!\n${Color_Off}"
+
+exit
+#END
