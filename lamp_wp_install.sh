@@ -2,43 +2,36 @@
 
 #COLORS
 # Bold
-BBlack='\033[1;30m'       # Black
-BRed='\033[1;31m'         # Red
-BGreen='\033[1;32m'       # Green
-BYellow='\033[1;33m'      # Yellow
-BBlue='\033[1;34m'        # Blue
-BPurple='\033[1;35m'      # Purple
-BCyan='\033[1;36m'        # Cyan
-BWhite='\033[1;37m'       # White
+Black='\033[1;30m'       # Black
+Red='\033[1;31m'         # Red
+Green='\033[1;32m'       # Green
+Yellow='\033[1;33m'      # Yellow
+Blue='\033[1;34m'        # Blue
+Purple='\033[1;35m'      # Purple
+Cyan='\033[1;36m'        # Cyan
+White='\033[1;37m'       # White
 # Reset
 Color_Off='\033[0m'       # Text Reset
+
+cprint() {
+	printf "${1}${2}\n${Color_Off}"
+}
 
 #Sudo Check
 if [ $EUID -ne "0" ]
 then
-    printf "${BRed}This script must be run in sudo mode.\n${Color_Off}"
-    printf "${BRed}Try: sudo sh ${0}\n${Color_Off}"
-    exit;
+	cprint $Red "This script must be run in sudo mode."
+	cprint $Yellow "Try: sudo sh ${0}"
+	exit;
 fi
 
-#Updating packages
-printf "${BPurple}Updating packages...${Color_Off}\n"
-sudo apt update -y
-printf "${BGreen}Done!\n${Color_Off}"
+#Config
+cprint $Cyan "Before we start you need to configure some variables:"
 
-#Installing SED to edit files
-sudo apt install sed -y
+cprint $Yellow "We start with MySQL username."
+read -p mysql_usr
 
-#Installing Apache2
-printf "${BPurple}Installing Apache 2...\n"
-sudo apt install apache2 -y
-printf "${BGreen}Done!\n${Color_Off}"
-
-#Installing MySQL server
-printf "${BPurple}Installing MySQL server...${Color_Off}\n"
-sudo apt install mysql-server -y
-
-printf "${BYellow}Configuring wordpress access...\n${Color_Off}"
+cprint $Yellow "Then MySQL password."
 read -p "Enter MySQL password:" -s mysql_psw
 echo
 read -p "Confirm password:" -s mysql_psw_conf
@@ -46,23 +39,43 @@ echo
 
 while [[ "$mysql_psw" != "$mysql_psw_conf" ]]
 do
-	printf "${BRred}Passwords are not the same!\n${Color_Off}"
-    	read -p "Enter MySQL password:" -s mysql_psw
-    	echo
-    	read -p "Confirm password:" -s mysql_psw_conf
-    	echo
+        cprint $Red "Passwords are not the same! Retry."
+        read -p "Enter MySQL password:" -s mysql_psw
+        echo
+        read -p "Confirm password:" -s mysql_psw_conf
+        echo
 done
 
-#TODO CHECK
+cprint $Cyan "Installation will start soon..."
+
+#Updating packages
+cprint $Purple "Updating Packages..."
+sudo apt update -y
+cprint $Green "Done updating packages!"
+
+#Installing SED if not installed yet
+sudo apt install sed -y
+
+#Installing Apache2
+cprint $Purple "Installing Apache2..."
+sudo apt install apache2 -y
+cprint $Green "Done installing Apache2!"
+
+#Installing MySQL server
+cprint $Purple "Installing MySQL server..."
+sudo apt install mysql-server -y
+
 mysql -uroot << MYSQL_END
-DROP USER wordpress@localhost;
-CREATE USER 'wordpress'@'localhost' IDENTIFIED BY '${mysql_psw}';
-GRANT ALL PRIVILEGES ON *.* TO 'wordpress'@'localhost' WITH GRANT OPTION;
-FLUSH PRIVILEGES;
+	DROP USER '${mysql_usr}'@'localhost';
+	CREATE USER '${mysql_usr}'@'localhost' IDENTIFIED BY '${mysql_psw}';
+	GRANT ALL PRIVILEGES ON *.* TO '${mysql_usr}'@'localhost' WITH GRANT OPTION;
+	FLUSH PRIVILEGES;
 MYSQL_END
 
+cprint $Green "Done installing MySQL server!"
+
 #Installing PHP@7.4
-printf "${BPurple}Installing PHP@7.4 ...${Color_Off}\n"
+cprint $Purple "Installing PHP@7.4 ..."
 
 sudo apt-get install software-properties-common -y
 sudo add-apt-repository ppa:ondrej/php -y
@@ -76,42 +89,40 @@ sudo service apache2 restart
 
 chown -R www-data:www-data /var/www/html
 
-printf "${BGreen}Done!\n${Color_Off}"
+cprint $Green "Done installing PHP@7.4!"
 
 #Increase RAM limit
 sed -i "s/memory_limit.*/memory_limit = 1024M/" /etc/php/7.4/apache2/php.ini
 sudo service apache2 restart
 
 #Configuring VirtualHost
-mv /etc/apache2/sites-available/000-default.conf /etc/apache2/sites-available/default.conf.copy
+mv /etc/apache2/sites-available/000-default.conf /etc/apache2/sites-available/000-default.conf.copy
 
 printf "<VirtualHost *:80>\n\tServerAdmin webmaster@localhost\n\tDocumentRoot /var/www/html\n\t<Directory /var/www/html>\n\t\tOptions Indexes FollowSymLinks MultiViews\n\t\tAllowOverride all\n\t\tRequire all granted\n\t</Directory>\n\tErrorLog \${APACHE_LOG_DIR}/error.log\n\tCustomLog \${APACHE_LOG_DIR}/access.log combined\n</VirtualHost>" >> /etc/apache2/sites-available/000-default.conf
 
 sudo service apache2 restart
 
 #Installing Wordpress
-printf "${BPurple}Installing Wordpress...\n${Color_Off}"
+cprint $Purple "Installing Wordpress..."
 
-mysql -uroot -e "CREATE DATABASE wordpress DEFAULT CHARACTER SET utf8 COLLATE utf8_unicode_ci;"
+mysql -uroot -e "CREATE DATABASE wordpress DEFAULT CHARACTER SET utf8 COLLATE utf8_unicode_ci;" #Database setup
 
 cd /tmp
-curl -O https://wordpress.org/latest.tar.gz
+curl -O https://wordpress.org/latest.tar.gz #Getting latest wordpress
 tar xzf latest.tar.gz
 
 touch /tmp/wordpress/.htaccess
 mkdir /tmp/wordpress/wp-content/upgrade
 
 rm /var/www/html/index.html
-sudo cp -a /tmp/wordpress/. /var/www/html
+sudo cp -a /tmp/wordpress/. /var/www/html #Copying it in html dir
 
 sudo chmod 755 /var/www/html/
-sudo find /var/www/html/ -type d -exec chmod 750 {}
+sudo find /var/www/html/ -type d -exec chmod 750 {} #Configuring permissions
 sudo find /var/www/html/ -type f -exec chmod 640 {} 
 
-sudo rm /var/www/html/wp-config.php
-
-#wp-config.php
-printf  "<?php\ndefine( 'DB_NAME', 'wordpress' );\ndefine( 'DB_USER', 'wordpress' );\ndefine( 'DB_PASSWORD', '${mysql_psw}' );\ndefine( 'DB_HOST', 'localhost' );\ndefine( 'DB_CHARSET', 'utf8' );\ndefine( 'DB_COLLATE', '' );\n\n" >> /var/www/html/wp-config.php
+#Configuring wp-config.php
+printf  "<?php\ndefine( 'DB_NAME', 'wordpress' );\ndefine( 'DB_USER', '${mysql_usr}' );\ndefine( 'DB_PASSWORD', '${mysql_psw}' );\ndefine( 'DB_HOST', 'localhost' );\ndefine( 'DB_CHARSET', 'utf8' );\ndefine( 'DB_COLLATE', '' );\n\n" >> /var/www/html/wp-config.php
 
 curl -s https://api.wordpress.org/secret-key/1.1/salt/ >> /var/www/html/wp-config.php
 
@@ -119,21 +130,40 @@ prefix=$(head -100 /dev/urandom | tr -dc a-zA-Z0-9 | fold -w 6 | head -1) #Rando
 
 printf  "\n\$table_prefix = '${prefix}_';\n\ndefine( 'WP_DEBUG', false );\nif ( ! defined( 'ABSPATH' ) ) {\n\tdefine( 'ABSPATH', __DIR__ . '/' );\n}\nrequire_once ABSPATH . 'wp-settings.php';\n?>" >> /var/www/html/wp-config.php
 
-printf "${BGreen}Done!\n${Color_Off}" 
+cprint $Green "Done installing Wordpress!" 
 
 #\Asking phpMyAdmin
-read -p "Do you want to install phpMyAdmin? (Y/n) " -n 1 -r
-if [[ $REPLY =~ ^[Yy]$ ]]
+read pmaok -p "Do you want to install phpMyAdmin? (Y/n) " -n 1 -r
+if [[ $pmaok =~ ^[Yy]$ ]]
 then
     echo
-    sudo apt update
+    	sudo apt update
 	sudo apt install phpmyadmin -y
 	ln -s /usr/share/phpmyadmin /var/www/html/phpmyadmin
-	printf "\n\nLocation: http://localhost/phpmyadmin \n"
-	printf "${BGreen}Done!\n${Color_Off}"
+	cprint $Green "Done installing phpMyAdmin"
 fi
 
-printf "${BPurple}Congrats! You have successfully installed Wordpress!\n${Color_Off}"
+cprint $Cyan "Congrats! You have successfully installed Wordpress!"
+echo
+
+#SUMMARY
+cprint $Yellow "********************** BRIEF SUMMARY ****************************"
+cprint $Yellow "PHP VERSION: 7.4"
+echo
+cprint $Yellow "MySQL user: ${mysql_usr}"
+cprint $Yellow "MySQL password: <THE ONE YOU CHOSE>"
+echo
+cprint $Yellow "You can now finish the setup at http://localhost/ (from this machine)"
+cprint $Yellow "Or http://<Your IP Address>/ (from local network)"
+echo
+
+if [[ $pmaok =~ ^[Yy]$ ]]
+then
+	cprint $Yellow "You can visit phpMyAdmin at http://localhost/phpmyadmin (from this machine)"
+	cprint $Yellow "Or http://<Your IP Address>/phpmyadmin (from local network)"	
+fi
+
+cprint $Yellow "*****************************************************************"
 
 exit
 #END
