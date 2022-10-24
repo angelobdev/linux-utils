@@ -25,7 +25,8 @@ sudo apt purge mysql-server -y
 sudo apt purge php7.4 libapache2-mod-php7.4 php7.4-curl php7.4-intl php7.4-zip php7.4-soap php7.4-xml php7.4-gd php7.4-mbstring php7.4-bcmath php7.4-common php7.4-xml php7.4-mysqli -y
 
 sudo rm -rf -v /tmp/wordpress
-sudo rm -rf -v /var/www/html*
+sudo rm -rf -v /var/www/html/*
+sudo rm /tmp/wp_install.txt
 
 sudo apt autoremove -y
 sudo apt autoclean -y
